@@ -440,7 +440,7 @@ setInterval(() => {
   console.log('==================');
 }, 30000); // Log every 30 seconds
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.SFU_PORT || 5001;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`SFU Server running on port ${PORT}`);
 }); 

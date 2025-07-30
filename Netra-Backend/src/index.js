@@ -73,21 +73,24 @@ async function start() {
     }
   };
 
-  app.get('/healthz', async () => {
+  app.get('/healthz', async (request, reply) => {
     console.log('Health check endpoint called');
     try {
-      if (db) {
+      if (db && db.connected) {
         await db.query('SELECT 1');
+        reply.send({ status: 'ok', database: 'connected' });
+      } else {
+        reply.send({ status: 'ok', database: 'disconnected' });
       }
-      return { status: 'ok', database: db ? 'connected' : 'disconnected' };
     } catch (error) {
-      return { status: 'error', database: 'error', message: error.message };
+      console.error('Health check error:', error);
+      reply.send({ status: 'ok', database: 'disconnected', error: error.message });
     }
   });
 
-  app.get('/', async () => {
+  app.get('/', async (request, reply) => {
     console.log('Root endpoint called');
-    return { msg: 'Netra backend' };
+    reply.send({ msg: 'Netra backend' });
   });
 
   // Auth routes
@@ -346,7 +349,7 @@ async function start() {
     }
   });
 
-  await app.listen({ port: 3000, host: '0.0.0.0' });
+  await app.listen({ port: 3001, host: '0.0.0.0' });
 }
 
 start().catch(console.error); 

@@ -8,13 +8,11 @@ RUN apk add --no-cache libc6-compat curl
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
 COPY Netra-Backend/package*.json ./Netra-Backend/
 COPY Netra-Frontend/package*.json ./Netra-Frontend/
 COPY Netra-sfu/package*.json ./Netra-sfu/
 
 # Install dependencies
-RUN npm ci --only=production --ignore-scripts
 RUN cd Netra-Backend && npm ci --only=production --ignore-scripts
 RUN cd Netra-Frontend && npm ci --ignore-scripts
 RUN cd Netra-sfu && npm ci --only=production --ignore-scripts
@@ -40,50 +38,14 @@ ENV PORT=3000
 COPY --from=base /app/Netra-Frontend/dist ./Netra-Frontend/dist
 COPY --from=base /app/Netra-Backend ./Netra-Backend
 COPY --from=base /app/Netra-sfu ./Netra-sfu
-COPY --from=base /app/package*.json ./
 
 # Copy node_modules
-COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/Netra-Backend/node_modules ./Netra-Backend/node_modules
 COPY --from=base /app/Netra-sfu/node_modules ./Netra-sfu/node_modules
 
-# Create startup script
-RUN echo '#!/bin/sh\n\
-echo "Starting Netra services..."\n\
-\n\
-# Start SFU server in background\n\
-cd /app/Netra-sfu && node server.js &\n\
-SFU_PID=$!\n\
-echo "SFU server started with PID: $SFU_PID"\n\
-\n\
-# Wait a moment for SFU to start\n\
-sleep 2\n\
-\n\
-# Start backend server\n\
-cd /app/Netra-Backend && node src/index.js &\n\
-BACKEND_PID=$!\n\
-echo "Backend server started with PID: $BACKEND_PID"\n\
-\n\
-# Wait for backend to be ready\n\
-echo "Waiting for backend to be ready..."\n\
-for i in $(seq 1 30); do\n\
-  if curl -f http://localhost:3000/healthz > /dev/null 2>&1; then\n\
-    echo "Backend is ready!"\n\
-    break\n\
-  fi\n\
-  echo "Waiting for backend... ($i/30)"\n\
-  sleep 2\n\
-done\n\
-\n\
-# Start nginx for frontend\n\
-echo "Starting nginx for frontend..."\n\
-nginx -g "daemon off;" &\n\
-NGINX_PID=$!\n\
-echo "Nginx started with PID: $NGINX_PID"\n\
-\n\
-# Wait for all processes\n\
-wait $SFU_PID $BACKEND_PID $NGINX_PID\n\
-' > /app/start.sh && chmod +x /app/start.sh
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # Install nginx
 RUN apk add --no-cache nginx
@@ -97,7 +59,7 @@ RUN adduser --system --uid 1001 nextjs
 RUN chown -R nextjs:nodejs /app
 
 # Expose ports
-EXPOSE 3000 5001 80
+EXPOSE 3000 3001 5001 80
 
 # Start the application
 CMD ["/app/start.sh"] 
