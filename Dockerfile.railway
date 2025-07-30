@@ -43,9 +43,43 @@ COPY --from=base /app/Netra-sfu ./Netra-sfu
 COPY --from=base /app/Netra-Backend/node_modules ./Netra-Backend/node_modules
 COPY --from=base /app/Netra-sfu/node_modules ./Netra-sfu/node_modules
 
-# Copy startup script
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+# Create startup script
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'echo "Starting Netra services..."' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Start SFU server in background' >> /app/start.sh && \
+    echo 'cd /app/Netra-sfu && node server.js &' >> /app/start.sh && \
+    echo 'SFU_PID=$!' >> /app/start.sh && \
+    echo 'echo "SFU server started with PID: $SFU_PID"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Wait a moment for SFU to start' >> /app/start.sh && \
+    echo 'sleep 2' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Start backend server' >> /app/start.sh && \
+    echo 'cd /app/Netra-Backend && node src/index.js &' >> /app/start.sh && \
+    echo 'BACKEND_PID=$!' >> /app/start.sh && \
+    echo 'echo "Backend server started with PID: $BACKEND_PID"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Wait for backend to be ready' >> /app/start.sh && \
+    echo 'echo "Waiting for backend to be ready..."' >> /app/start.sh && \
+    echo 'for i in $(seq 1 30); do' >> /app/start.sh && \
+    echo '  if curl -f http://localhost:3001/healthz > /dev/null 2>&1; then' >> /app/start.sh && \
+    echo '    echo "Backend is ready!"' >> /app/start.sh && \
+    echo '    break' >> /app/start.sh && \
+    echo '  fi' >> /app/start.sh && \
+    echo '  echo "Waiting for backend... ($i/30)"' >> /app/start.sh && \
+    echo '  sleep 2' >> /app/start.sh && \
+    echo 'done' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Start nginx for frontend' >> /app/start.sh && \
+    echo 'echo "Starting nginx for frontend..."' >> /app/start.sh && \
+    echo 'nginx -g "daemon off;" &' >> /app/start.sh && \
+    echo 'NGINX_PID=$!' >> /app/start.sh && \
+    echo 'echo "Nginx started with PID: $NGINX_PID"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Wait for all processes' >> /app/start.sh && \
+    echo 'wait $SFU_PID $BACKEND_PID $NGINX_PID' >> /app/start.sh && \
+    chmod +x /app/start.sh
 
 # Install nginx
 RUN apk add --no-cache nginx
