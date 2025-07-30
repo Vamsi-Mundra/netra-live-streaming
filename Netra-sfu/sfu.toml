@@ -1,0 +1,12 @@
+[log]
+level = "info"
+
+[webrtc]
+udp_port = 7000
+rtcp_mux = true
+
+[signal]
+jsonrpc_addr = ":7000"
+
+[health]
+port = 5001 
