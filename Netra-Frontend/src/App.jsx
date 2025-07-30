@@ -6,6 +6,8 @@ import Stream from './pages/Stream';
 import Viewer from './pages/Viewer';
 import CameraTest from './pages/CameraTest';
 import Status from './pages/Status';
+import Rooms from './pages/Rooms';
+import Room from './pages/Room';
 
 function App() {
   return (
@@ -18,6 +20,8 @@ function App() {
         <Route path="/viewer/:roomId" element={<Viewer />} />
         <Route path="/camera-test" element={<CameraTest />} />
         <Route path="/status" element={<Status />} />
+        <Route path="/rooms" element={<Rooms />} />
+        <Route path="/room/:roomId" element={<Room />} />
         <Route path="/" element={<Status />} />
       </Routes>
     </Router>

@@ -23,6 +23,7 @@ const rooms = new Map();
 const clients = new Map();
 const clientRooms = new Map(); // Track which room each client is in
 const clientStates = new Map(); // Track client connection state
+const clientRoles = new Map(); // Track client roles (host/participant)
 
 // Debug function to log current state
 function logCurrentState() {
@@ -30,11 +31,50 @@ function logCurrentState() {
   console.log('Total clients:', clients.size);
   console.log('Total rooms:', rooms.size);
   console.log('Client rooms:', Object.fromEntries(clientRooms));
-  console.log('Client states:', Object.fromEntries(clientStates));
+  console.log('Client roles:', Object.fromEntries(clientRoles));
   console.log('Rooms:', Array.from(rooms.entries()).map(([roomId, clients]) => 
     `${roomId}: ${clients.size} clients (${Array.from(clients)})`
   ));
   console.log('=====================');
+}
+
+// Validate room state
+function validateRoomState(roomId, clientId) {
+  if (!roomId) {
+    console.error(`Client ${clientId} has no roomId`);
+    return false;
+  }
+  
+  if (!rooms.has(roomId)) {
+    console.error(`Room ${roomId} does not exist`);
+    return false;
+  }
+  
+  const room = rooms.get(roomId);
+  if (!room.has(clientId)) {
+    console.error(`Client ${clientId} not in room ${roomId}`);
+    return false;
+  }
+  
+  return true;
+}
+
+// Get client's room with validation
+function getClientRoom(clientId) {
+  const roomId = clientRooms.get(clientId);
+  if (!roomId) {
+    console.error(`Client ${clientId} not in any room`);
+    return null;
+  }
+  
+  const room = rooms.get(roomId);
+  if (!room) {
+    console.error(`Room ${roomId} not found for client ${clientId}`);
+    clientRooms.delete(clientId);
+    return null;
+  }
+  
+  return { roomId, room };
 }
 
 // Handle WebSocket connections
@@ -69,9 +109,9 @@ wss.on('connection', (ws) => {
 });
 
 function handleMessage(clientId, data) {
-  const { type, roomId, payload } = data;
+  const { type, roomId, payload, targetUserId } = data;
   
-  console.log(`Processing message: type=${type}, roomId=${roomId}, clientId=${clientId}`);
+  console.log(`Processing message: type=${type}, roomId=${roomId}, clientId=${clientId}, targetUserId=${targetUserId}`);
   console.log(`Client ${clientId} current room:`, clientRooms.get(clientId));
   
   // Validate message structure
@@ -89,13 +129,13 @@ function handleMessage(clientId, data) {
       handleJoin(clientId, roomId);
       break;
     case 'offer':
-      handleOffer(clientId, roomId, payload);
+      handleOffer(clientId, roomId, payload, targetUserId);
       break;
     case 'answer':
-      handleAnswer(clientId, roomId, payload);
+      handleAnswer(clientId, roomId, payload, targetUserId);
       break;
     case 'ice-candidate':
-      handleIceCandidate(clientId, roomId, payload);
+      handleIceCandidate(clientId, roomId, payload, targetUserId);
       break;
     case 'leave':
       handleLeave(clientId, roomId);
@@ -121,23 +161,30 @@ function handleJoin(clientId, roomId) {
   }
   
   const room = rooms.get(roomId);
+  const isFirstParticipant = room.size === 0;
+  
   room.add(clientId);
   clientRooms.set(clientId, roomId);
   clientStates.set(clientId, { connected: true, roomId: roomId });
   
+  // Set role based on whether this is the first participant
+  clientRoles.set(clientId, isFirstParticipant ? 'host' : 'participant');
+  
   console.log(`Room ${roomId} now has ${room.size} clients:`, Array.from(room));
-  console.log(`Client ${clientId} successfully joined room ${roomId}`);
+  console.log(`Client ${clientId} successfully joined room ${roomId} as ${isFirstParticipant ? 'host' : 'participant'}`);
   logCurrentState();
   
-  // Notify other clients in the room
+  // Notify other clients in the room about the new participant
   room.forEach(id => {
     if (id !== clientId) {
       const client = clients.get(id);
       if (client && client.readyState === WebSocket.OPEN) {
-        console.log(`Notifying client ${id} about new user ${clientId}`);
+        console.log(`Notifying client ${id} about new participant ${clientId}`);
         client.send(JSON.stringify({
-          type: 'user-joined',
-          clientId: clientId
+          type: 'participant-joined',
+          roomId: roomId,
+          participantId: clientId,
+          role: isFirstParticipant ? 'host' : 'participant'
         }));
       }
     }
@@ -146,144 +193,171 @@ function handleJoin(clientId, roomId) {
   // Send room info to the joining client
   const client = clients.get(clientId);
   if (client && client.readyState === WebSocket.OPEN) {
-    const existingClients = Array.from(room).filter(id => id !== clientId);
-    console.log(`Sending room info to ${clientId}, existing clients:`, existingClients);
+    const existingParticipants = Array.from(room).filter(id => id !== clientId);
+    console.log(`Sending room info to ${clientId}, existing participants:`, existingParticipants);
     client.send(JSON.stringify({
       type: 'room-info',
       roomId: roomId,
-      clients: existingClients
+      participants: existingParticipants,
+      role: isFirstParticipant ? 'host' : 'participant'
     }));
   }
 }
 
-function handleOffer(clientId, roomId, payload) {
+function handleOffer(clientId, roomId, payload, targetUserId) {
   // Use the tracked room if roomId is not provided
   const actualRoomId = roomId || clientRooms.get(clientId);
   
-  console.log(`handleOffer called: clientId=${clientId}, providedRoomId=${roomId}, actualRoomId=${actualRoomId}`);
-  console.log(`Client ${clientId} tracked room:`, clientRooms.get(clientId));
+  console.log(`handleOffer called: clientId=${clientId}, providedRoomId=${roomId}, actualRoomId=${actualRoomId}, targetUserId=${targetUserId}`);
   
-  if (!actualRoomId) {
-    console.error(`Client ${clientId} sending offer without roomId and not in any room`);
-    console.error(`Client rooms map:`, Object.fromEntries(clientRooms));
-    console.error(`Client states map:`, Object.fromEntries(clientStates));
+  if (!validateRoomState(actualRoomId, clientId)) {
+    console.error(`Invalid room state for client ${clientId} in room ${actualRoomId}`);
     return;
   }
-  
-  console.log(`Client ${clientId} sending offer in room ${actualRoomId}`);
   
   const room = rooms.get(actualRoomId);
-  if (!room) {
-    console.error(`Room ${actualRoomId} not found for client ${clientId}`);
-    console.error(`Available rooms:`, Array.from(rooms.keys()));
-    return;
-  }
   
-  if (!room.has(clientId)) {
-    console.error(`Client ${clientId} not in room ${actualRoomId}`);
-    console.error(`Room ${actualRoomId} clients:`, Array.from(room));
-    return;
-  }
-  
-  room.forEach(id => {
-    if (id !== clientId) {
-      const client = clients.get(id);
-      if (client && client.readyState === WebSocket.OPEN) {
-        console.log(`Forwarding offer from ${clientId} to ${id}`);
-        client.send(JSON.stringify({
+  // If targetUserId is specified, send only to that user
+  if (targetUserId) {
+    if (room.has(targetUserId)) {
+      const targetClient = clients.get(targetUserId);
+      if (targetClient && targetClient.readyState === WebSocket.OPEN) {
+        console.log(`Forwarding offer from ${clientId} to ${targetUserId}`);
+        targetClient.send(JSON.stringify({
           type: 'offer',
-          clientId: clientId,
+          roomId: actualRoomId,
+          fromUserId: clientId,
           payload: payload
         }));
       } else {
-        console.warn(`Client ${id} not available for offer forwarding`);
+        console.warn(`Target client ${targetUserId} not available for offer forwarding`);
       }
+    } else {
+      console.error(`Target user ${targetUserId} not in room ${actualRoomId}`);
     }
-  });
+  } else {
+    // Send to all other participants in the room
+    room.forEach(id => {
+      if (id !== clientId) {
+        const client = clients.get(id);
+        if (client && client.readyState === WebSocket.OPEN) {
+          console.log(`Forwarding offer from ${clientId} to ${id}`);
+          client.send(JSON.stringify({
+            type: 'offer',
+            roomId: actualRoomId,
+            fromUserId: clientId,
+            payload: payload
+          }));
+        } else {
+          console.warn(`Client ${id} not available for offer forwarding`);
+        }
+      }
+    });
+  }
 }
 
-function handleAnswer(clientId, roomId, payload) {
+function handleAnswer(clientId, roomId, payload, targetUserId) {
   // Use the tracked room if roomId is not provided
   const actualRoomId = roomId || clientRooms.get(clientId);
   
-  console.log(`handleAnswer called: clientId=${clientId}, providedRoomId=${roomId}, actualRoomId=${actualRoomId}`);
-  console.log(`Client ${clientId} tracked room:`, clientRooms.get(clientId));
+  console.log(`handleAnswer called: clientId=${clientId}, providedRoomId=${roomId}, actualRoomId=${actualRoomId}, targetUserId=${targetUserId}`);
   
-  if (!actualRoomId) {
-    console.error(`Client ${clientId} sending answer without roomId and not in any room`);
-    console.error(`Client rooms map:`, Object.fromEntries(clientRooms));
-    console.error(`Client states map:`, Object.fromEntries(clientStates));
+  if (!validateRoomState(actualRoomId, clientId)) {
+    console.error(`Invalid room state for client ${clientId} in room ${actualRoomId}`);
     return;
   }
-  
-  console.log(`Client ${clientId} sending answer in room ${actualRoomId}`);
   
   const room = rooms.get(actualRoomId);
-  if (!room) {
-    console.error(`Room ${actualRoomId} not found for client ${clientId}`);
-    console.error(`Available rooms:`, Array.from(rooms.keys()));
-    return;
-  }
   
-  if (!room.has(clientId)) {
-    console.error(`Client ${clientId} not in room ${actualRoomId}`);
-    console.error(`Room ${actualRoomId} clients:`, Array.from(room));
-    return;
-  }
-  
-  room.forEach(id => {
-    if (id !== clientId) {
-      const client = clients.get(id);
-      if (client && client.readyState === WebSocket.OPEN) {
-        console.log(`Forwarding answer from ${clientId} to ${id}`);
-        client.send(JSON.stringify({
+  // If targetUserId is specified, send only to that user
+  if (targetUserId) {
+    if (room.has(targetUserId)) {
+      const targetClient = clients.get(targetUserId);
+      if (targetClient && targetClient.readyState === WebSocket.OPEN) {
+        console.log(`Forwarding answer from ${clientId} to ${targetUserId}`);
+        targetClient.send(JSON.stringify({
           type: 'answer',
-          clientId: clientId,
+          roomId: actualRoomId,
+          fromUserId: clientId,
           payload: payload
         }));
       } else {
-        console.warn(`Client ${id} not available for answer forwarding`);
+        console.warn(`Target client ${targetUserId} not available for answer forwarding`);
       }
+    } else {
+      console.error(`Target user ${targetUserId} not in room ${actualRoomId}`);
     }
-  });
+  } else {
+    // Send to all other participants in the room
+    room.forEach(id => {
+      if (id !== clientId) {
+        const client = clients.get(id);
+        if (client && client.readyState === WebSocket.OPEN) {
+          console.log(`Forwarding answer from ${clientId} to ${id}`);
+          client.send(JSON.stringify({
+            type: 'answer',
+            roomId: actualRoomId,
+            fromUserId: clientId,
+            payload: payload
+          }));
+        } else {
+          console.warn(`Client ${id} not available for answer forwarding`);
+        }
+      }
+    });
+  }
 }
 
-function handleIceCandidate(clientId, roomId, payload) {
+function handleIceCandidate(clientId, roomId, payload, targetUserId) {
   // Use the tracked room if roomId is not provided
   const actualRoomId = roomId || clientRooms.get(clientId);
   
-  console.log(`handleIceCandidate called: clientId=${clientId}, providedRoomId=${roomId}, actualRoomId=${actualRoomId}`);
+  console.log(`handleIceCandidate called: clientId=${clientId}, providedRoomId=${roomId}, actualRoomId=${actualRoomId}, targetUserId=${targetUserId}`);
   
-  if (!actualRoomId) {
-    console.error(`Client ${clientId} sending ICE candidate without roomId and not in any room`);
+  if (!validateRoomState(actualRoomId, clientId)) {
+    console.error(`Invalid room state for client ${clientId} in room ${actualRoomId}`);
     return;
   }
   
   const room = rooms.get(actualRoomId);
-  if (!room) {
-    console.error(`Room ${actualRoomId} not found for client ${clientId}`);
-    return;
-  }
   
-  if (!room.has(clientId)) {
-    console.error(`Client ${clientId} not in room ${actualRoomId}`);
-    return;
-  }
-  
-  room.forEach(id => {
-    if (id !== clientId) {
-      const client = clients.get(id);
-      if (client && client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({
+  // If targetUserId is specified, send only to that user
+  if (targetUserId) {
+    if (room.has(targetUserId)) {
+      const targetClient = clients.get(targetUserId);
+      if (targetClient && targetClient.readyState === WebSocket.OPEN) {
+        console.log(`Forwarding ICE candidate from ${clientId} to ${targetUserId}`);
+        targetClient.send(JSON.stringify({
           type: 'ice-candidate',
-          clientId: clientId,
+          roomId: actualRoomId,
+          fromUserId: clientId,
           payload: payload
         }));
       } else {
-        console.warn(`Client ${id} not available for ICE candidate forwarding`);
+        console.warn(`Target client ${targetUserId} not available for ICE candidate forwarding`);
       }
+    } else {
+      console.error(`Target user ${targetUserId} not in room ${actualRoomId}`);
     }
-  });
+  } else {
+    // Send to all other participants in the room
+    room.forEach(id => {
+      if (id !== clientId) {
+        const client = clients.get(id);
+        if (client && client.readyState === WebSocket.OPEN) {
+          console.log(`Forwarding ICE candidate from ${clientId} to ${id}`);
+          client.send(JSON.stringify({
+            type: 'ice-candidate',
+            roomId: actualRoomId,
+            fromUserId: clientId,
+            payload: payload
+          }));
+        } else {
+          console.warn(`Client ${id} not available for ICE candidate forwarding`);
+        }
+      }
+    });
+  }
 }
 
 function handleLeave(clientId, roomId) {
@@ -303,17 +377,19 @@ function handleLeave(clientId, roomId) {
   if (room) {
     room.delete(clientId);
     clientRooms.delete(clientId);
+    clientRoles.delete(clientId);
     clientStates.set(clientId, { connected: true, roomId: null });
     
     console.log(`Room ${actualRoomId} now has ${room.size} clients:`, Array.from(room));
     
-    // Notify other clients
+    // Notify other clients about the participant leaving
     room.forEach(id => {
       const client = clients.get(id);
       if (client && client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify({
-          type: 'user-left',
-          clientId: clientId
+          type: 'participant-left',
+          roomId: actualRoomId,
+          participantId: clientId
         }));
       }
     });
@@ -343,6 +419,7 @@ function handleClientDisconnect(clientId) {
   // Remove client from tracking maps
   clients.delete(clientId);
   clientRooms.delete(clientId);
+  clientRoles.delete(clientId);
   clientStates.delete(clientId);
   
   console.log(`Client ${clientId} disconnected, total clients: ${clients.size}`);

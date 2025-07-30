@@ -10,13 +10,16 @@ import {
   Grid,
   Card,
   CardContent,
-  CardHeader
+  CardHeader,
+  Button
 } from '@mui/material';
 import { CheckCircle, Error, Warning } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 function Status() {
   const [backendStatus, setBackendStatus] = useState({ loading: true, data: null, error: null });
   const [sfuStatus, setSfuStatus] = useState({ loading: true, data: null, error: null });
+  const navigate = useNavigate();
 
   const checkBackend = async () => {
     try {
@@ -145,6 +148,40 @@ function Status() {
         <Paper sx={{ p: 3, mt: 3 }}>
           <Typography variant="h6" gutterBottom>
             Quick Actions
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              onClick={() => navigate('/rooms')}
+              sx={{ mb: 1 }}
+            >
+              🏠 Video Chat Rooms
+            </Button>
+            <Button 
+              variant="outlined" 
+              onClick={() => navigate('/login')}
+              sx={{ mb: 1 }}
+            >
+              Sign In
+            </Button>
+            <Button 
+              variant="outlined" 
+              onClick={() => navigate('/signup')}
+              sx={{ mb: 1 }}
+            >
+              Sign Up
+            </Button>
+            <Button 
+              variant="outlined" 
+              onClick={() => navigate('/stream')}
+              sx={{ mb: 1 }}
+            >
+              Start Stream
+            </Button>
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            • <strong>Video Chat Rooms:</strong> Create or join rooms for group video calls (up to 5 people)
           </Typography>
           <Typography variant="body2" color="text.secondary">
             • <strong>Sign In:</strong> Access your account and start streaming

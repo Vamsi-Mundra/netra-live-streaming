@@ -126,6 +126,171 @@ async function start() {
     return { status: 'stopped' };
   });
 
+  // Room routes
+  app.post('/rooms', { preHandler: verifyJWT }, async (request, reply) => {
+    const { name, description, maxParticipants = 5 } = request.body;
+    
+    if (!name || name.trim().length === 0) {
+      reply.code(400).send({ error: 'Room name is required' });
+      return;
+    }
+
+    if (maxParticipants < 2 || maxParticipants > 5) {
+      reply.code(400).send({ error: 'Max participants must be between 2 and 5' });
+      return;
+    }
+
+    try {
+      const result = await db.query(
+        'INSERT INTO rooms (name, description, created_by, max_participants) VALUES ($1, $2, $3, $4) RETURNING *',
+        [name.trim(), description?.trim() || null, request.user.userId, maxParticipants]
+      );
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error creating room:', error);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.get('/rooms', { preHandler: verifyJWT }, async (request) => {
+    try {
+      const result = await db.query(`
+        SELECT 
+          r.*,
+          u.email as creator_email,
+          COUNT(rp.id) as current_participants
+        FROM rooms r
+        LEFT JOIN users u ON r.created_by = u.id
+        LEFT JOIN room_participants rp ON r.id = rp.room_id AND rp.is_active = true
+        WHERE r.is_active = true
+        GROUP BY r.id, u.email
+        ORDER BY r.created_at DESC
+      `);
+      
+      return result.rows;
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+      throw error;
+    }
+  });
+
+  app.get('/rooms/:roomId', { preHandler: verifyJWT }, async (request, reply) => {
+    const { roomId } = request.params;
+    
+    try {
+      const result = await db.query(`
+        SELECT 
+          r.*,
+          u.email as creator_email,
+          COUNT(rp.id) as current_participants
+        FROM rooms r
+        LEFT JOIN users u ON r.created_by = u.id
+        LEFT JOIN room_participants rp ON r.id = rp.room_id AND rp.is_active = true
+        WHERE r.id = $1 AND r.is_active = true
+        GROUP BY r.id, u.email
+      `, [roomId]);
+      
+      if (result.rows.length === 0) {
+        reply.code(404).send({ error: 'Room not found' });
+        return;
+      }
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error fetching room:', error);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.post('/rooms/:roomId/join', { preHandler: verifyJWT }, async (request, reply) => {
+    const { roomId } = request.params;
+    
+    try {
+      // Check if room exists and is active
+      const roomResult = await db.query(
+        'SELECT * FROM rooms WHERE id = $1 AND is_active = true',
+        [roomId]
+      );
+      
+      if (roomResult.rows.length === 0) {
+        reply.code(404).send({ error: 'Room not found' });
+        return;
+      }
+      
+      const room = roomResult.rows[0];
+      
+      // Check if user is already in the room
+      const existingParticipant = await db.query(
+        'SELECT * FROM room_participants WHERE room_id = $1 AND user_id = $2 AND is_active = true',
+        [roomId, request.user.userId]
+      );
+      
+      if (existingParticipant.rows.length > 0) {
+        return { message: 'Already in room', roomId };
+      }
+      
+      // Check if room is full
+      const participantCount = await db.query(
+        'SELECT COUNT(*) FROM room_participants WHERE room_id = $1 AND is_active = true',
+        [roomId]
+      );
+      
+      if (parseInt(participantCount.rows[0].count) >= room.max_participants) {
+        reply.code(400).send({ error: 'Room is full' });
+        return;
+      }
+      
+      // Add user to room
+      await db.query(
+        'INSERT INTO room_participants (room_id, user_id) VALUES ($1, $2)',
+        [roomId, request.user.userId]
+      );
+      
+      return { message: 'Joined room successfully', roomId };
+    } catch (error) {
+      console.error('Error joining room:', error);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.post('/rooms/:roomId/leave', { preHandler: verifyJWT }, async (request, reply) => {
+    const { roomId } = request.params;
+    
+    try {
+      await db.query(
+        'UPDATE room_participants SET is_active = false, left_at = NOW() WHERE room_id = $1 AND user_id = $2',
+        [roomId, request.user.userId]
+      );
+      
+      return { message: 'Left room successfully' };
+    } catch (error) {
+      console.error('Error leaving room:', error);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.get('/rooms/:roomId/participants', { preHandler: verifyJWT }, async (request, reply) => {
+    const { roomId } = request.params;
+    
+    try {
+      const result = await db.query(`
+        SELECT 
+          rp.*,
+          u.email
+        FROM room_participants rp
+        JOIN users u ON rp.user_id = u.id
+        WHERE rp.room_id = $1 AND rp.is_active = true
+        ORDER BY rp.joined_at
+      `, [roomId]);
+      
+      return result.rows;
+    } catch (error) {
+      console.error('Error fetching participants:', error);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
   await app.listen({ port: 3000, host: '0.0.0.0' });
 }
 
