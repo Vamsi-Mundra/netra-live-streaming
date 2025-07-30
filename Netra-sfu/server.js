@@ -15,8 +15,11 @@ app.get('/health', (req, res) => {
 // Create HTTP server
 const server = http.createServer(app);
 
-// Create WebSocket server
-const wss = new WebSocket.Server({ server });
+// Create WebSocket server with path for Railway
+const wss = new WebSocket.Server({ 
+  server,
+  path: process.env.NODE_ENV === 'production' ? '/sfu' : undefined
+});
 
 // Store active connections and rooms
 const rooms = new Map();
@@ -78,8 +81,8 @@ function getClientRoom(clientId) {
 }
 
 // Handle WebSocket connections
-wss.on('connection', (ws) => {
-  console.log('WebSocket client connected to SFU');
+wss.on('connection', (ws, req) => {
+  console.log('WebSocket client connected to SFU', req.url);
   const clientId = uuidv4();
   clients.set(clientId, ws);
   clientStates.set(clientId, { connected: true, roomId: null });

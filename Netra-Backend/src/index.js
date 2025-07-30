@@ -6,6 +6,39 @@ import { v4 as uuidv4 } from 'uuid';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
 import * as dotenv from 'dotenv'; dotenv.config();
+import fs from 'fs';
+import path from 'path';
+
+async function runMigrations(db) {
+  try {
+    console.log('Running database migrations...');
+    
+    // Read migration files
+    const migrationsDir = path.join(process.cwd(), 'migrations');
+    const migrationFiles = fs.readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort();
+    
+    for (const file of migrationFiles) {
+      console.log(`Running migration: ${file}`);
+      const migrationPath = path.join(migrationsDir, file);
+      const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+      
+      // Split by semicolon and execute each statement
+      const statements = migrationSQL.split(';').filter(stmt => stmt.trim());
+      for (const statement of statements) {
+        if (statement.trim()) {
+          await db.query(statement);
+        }
+      }
+    }
+    
+    console.log('Database migrations completed successfully');
+  } catch (error) {
+    console.error('Migration error:', error);
+    // Don't throw error, continue with startup
+  }
+}
 
 async function start() {
   const app = Fastify({ logger: true });
@@ -13,9 +46,14 @@ async function start() {
 
   let db;
   try {
-    db = new Client({ connectionString: process.env.DATABASE_URL });
+    // Use Railway's DATABASE_URL or fallback to local
+    const databaseUrl = process.env.DATABASE_URL || 'postgres://netra:netra@localhost:5432/netra';
+    db = new Client({ connectionString: databaseUrl });
     await db.connect();
     console.log('Database connected successfully');
+    
+    // Run migrations
+    await runMigrations(db);
   } catch (error) {
     console.error('Database connection failed:', error.message);
     // Continue without database for now
@@ -37,7 +75,14 @@ async function start() {
 
   app.get('/healthz', async () => {
     console.log('Health check endpoint called');
-    return { status: 'ok' };
+    try {
+      if (db) {
+        await db.query('SELECT 1');
+      }
+      return { status: 'ok', database: db ? 'connected' : 'disconnected' };
+    } catch (error) {
+      return { status: 'error', database: 'error', message: error.message };
+    }
   });
 
   app.get('/', async () => {
@@ -47,6 +92,11 @@ async function start() {
 
   // Auth routes
   app.post('/auth/signup', async (request, reply) => {
+    if (!db) {
+      reply.code(500).send({ error: 'Database not available' });
+      return;
+    }
+    
     const { email, password } = request.body;
     
     try {
@@ -73,6 +123,11 @@ async function start() {
   });
 
   app.post('/auth/login', async (request, reply) => {
+    if (!db) {
+      reply.code(500).send({ error: 'Database not available' });
+      return;
+    }
+    
     const { email, password } = request.body;
     
     try {

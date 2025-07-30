@@ -78,7 +78,12 @@ function Room() {
   };
 
   const connectToSFU = () => {
-    const wsUrl = `ws://${window.location.hostname}:5001`;
+    // Use the correct WebSocket URL based on environment
+    const wsUrl = process.env.NODE_ENV === 'production' 
+      ? `wss://${window.location.host}/sfu`
+      : `ws://${window.location.hostname}:5001`;
+    
+    console.log('Connecting to SFU at:', wsUrl);
     const websocket = new WebSocket(wsUrl);
 
     websocket.onopen = () => {
