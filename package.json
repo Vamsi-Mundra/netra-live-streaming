@@ -1,0 +1,38 @@
+{
+  "name": "netra-live-streaming",
+  "version": "1.0.0",
+  "description": "A real-time live streaming platform with WebRTC",
+  "main": "index.js",
+  "scripts": {
+    "dev": "docker-compose up",
+    "build": "docker-compose build",
+    "start": "docker-compose up -d",
+    "stop": "docker-compose down",
+    "logs": "docker-compose logs -f",
+    "clean": "docker-compose down -v --remove-orphans",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "webrtc",
+    "live-streaming",
+    "video",
+    "real-time",
+    "sfu",
+    "react",
+    "nodejs"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/netra-live-streaming.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/netra-live-streaming/issues"
+  },
+  "homepage": "https://github.com/yourusername/netra-live-streaming#readme"
+} 

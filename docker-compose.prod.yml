@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-netra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-netra}
+      POSTGRES_DB: ${POSTGRES_DB:-netra}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netra} -d ${POSTGRES_DB:-netra}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: 
+      context: ./Netra-Backend
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-netra}:${POSTGRES_PASSWORD:-netra}@db:5432/${POSTGRES_DB:-netra}
+      JWT_SECRET: ${JWT_SECRET:-supersecret}
+      PORT: 3000
+    ports: ["3000:3000"]
+    command: sh -c "sleep 5 && npm run migrate && node src/index.js"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  sfu:
+    build: ./Netra-sfu
+    environment:
+      PORT: 5001
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./Netra-Frontend
+      dockerfile: Dockerfile.prod
+    depends_on:
+      backend:
+        condition: service_healthy
+      sfu:
+        condition: service_healthy
+    ports: ["80:80"]
+    environment:
+      - BACKEND_URL=http://backend:3000
+      - SFU_URL=ws://sfu:5001
+
+volumes:
+  postgres_data: 

@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: netra
+      POSTGRES_PASSWORD: netra
+      POSTGRES_DB: netra
+    ports: ["5434:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netra -d netra"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./Netra-Backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://netra:netra@db:5432/netra
+      JWT_SECRET: supersecret
+    ports: ["3000:3000"]
+    command: sh -c "sleep 5 && npm run migrate && node src/index.js"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  sfu:
+    build: ./Netra-sfu
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./Netra-Frontend
+      dockerfile: Dockerfile.dev
+    depends_on:
+      backend:
+        condition: service_healthy
+      sfu:
+        condition: service_healthy
+    volumes:
+      - ./Netra-Frontend:/app
+    ports: ["5173:80"] 
