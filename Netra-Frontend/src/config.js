@@ -1,7 +1,7 @@
 // Configuration for different environments
 const config = {
   development: {
-    backendUrl: 'http://localhost:3000',
+    backendUrl: 'http://localhost:3001',
     sfuUrl: 'ws://localhost:5001',
     apiBaseUrl: '/api',
     sfuHealthUrl: '/sfu/health'

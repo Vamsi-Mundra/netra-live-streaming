@@ -53,6 +53,8 @@ async function start() {
   try {
     // Use Railway's DATABASE_URL or fallback to local
     const databaseUrl = process.env.DATABASE_URL || 'postgres://netra:netra@localhost:5432/netra';
+    console.log('Attempting to connect to database with URL:', databaseUrl);
+    console.log('Environment DATABASE_URL:', process.env.DATABASE_URL || 'NOT SET (using fallback)');
     db = new Client({ connectionString: databaseUrl });
     await db.connect();
     console.log('Database connected successfully');
