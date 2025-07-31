@@ -13,7 +13,7 @@ import {
   IconButton
 } from '@mui/material';
 import { Visibility, VisibilityOff, Email, Lock } from '@mui/icons-material';
-import axios from 'axios';
+import api from '../api.js';
 
 function SignIn() {
   const [email, setEmail] = useState('');
@@ -29,7 +29,7 @@ function SignIn() {
     setError('');
     
     try {
-      const response = await axios.post('/api/auth/login', { email, password });
+      const response = await api.post('/auth/login', { email, password });
       localStorage.setItem('token', response.data.token);
       navigate('/videos');
     } catch (error) {

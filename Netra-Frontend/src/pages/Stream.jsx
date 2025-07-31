@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api.js';
 
 function Stream() {
   const [isStreaming, setIsStreaming] = useState(false);
@@ -55,7 +55,7 @@ function Stream() {
       const authCfg = { headers: { Authorization: `Bearer ${token}` } };
       
       // Start stream and get room ID
-      const { data } = await axios.post('/api/streams/start', {}, authCfg);
+      const { data } = await api.post('/streams/start', {}, authCfg);
       setRoomId(data.roomId);
       
       // Get user media first
@@ -382,7 +382,7 @@ function Stream() {
       peerConnectionsRef.current.clear();
       
       // Stop stream on backend
-      await axios.post('/api/streams/stop', {}, authCfg);
+              await api.post('/streams/stop', {}, authCfg);
       
       setIsStreaming(false);
       setRoomId(null);

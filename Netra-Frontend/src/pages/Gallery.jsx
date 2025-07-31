@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api.js';
 
 function Gallery() {
   const [videos, setVideos] = useState([]);
@@ -17,7 +17,7 @@ function Gallery() {
 
     const fetchVideos = async () => {
       try {
-        const response = await axios.get('/api/videos', {
+        const response = await api.get('/videos', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setVideos(response.data);
